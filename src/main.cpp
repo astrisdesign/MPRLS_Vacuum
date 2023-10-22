@@ -17,9 +17,14 @@ String logMessage = "";
 SemaphoreHandle_t mutex;
 
 void printJSON() {
-  DynamicJsonDocument doc(128);
-  doc["0"] = pressure_psi;
-  serializeJson(doc, Serial);
+  DynamicJsonDocument data(128);
+  data["0"] = pressure_psi;
+  serializeJson(data, Serial);
+  Serial.print("~~~");
+  DynamicJsonDocument setpoints(128);
+  setpoints["Pressure"] = pressure_setpoint_psi;
+  setpoints["Temperature"] = 25;
+  serializeJson(setpoints, Serial);
   Serial.print("~~~");
   Serial.println(logMessage);
 }
@@ -38,32 +43,12 @@ void ResetSensor() {
       delay(500);
       digitalWrite(led, LOW);
       delay(100);
-      logMessage = "Pressure Sensor Initialization Failure";
+      logMessage = "Pressure sensor initialization failure";
       pressure_psi = 0.0;
       printJSON();
       delay(400);
     }
   }
-}
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(RELAY_PIN, OUTPUT);
-  pinMode(led, OUTPUT);
-  pinMode(RESET_PIN, OUTPUT);
-
-  mutex = xSemaphoreCreateMutex();
-  ResetSensor();
-
-  xTaskCreatePinnedToCore(
-    Core0Code,
-    "PressureControl",
-    10000,
-    NULL,
-    1,
-    NULL,
-    0
-  );
 }
 
 void Core0Code(void * pvParameters) {
@@ -93,17 +78,39 @@ void Core0Code(void * pvParameters) {
   }
 }
 
-void loop() {
-  if (Serial.available() > 0) {
-    String input = Serial.readStringUntil('\n');
-    pressure_setpoint_psi = input.toFloat();
-  }
+void setup() {
+  Serial.begin(115200);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(led, OUTPUT);
+  pinMode(RESET_PIN, OUTPUT);
 
+  mutex = xSemaphoreCreateMutex();
+  ResetSensor();
+
+  xTaskCreatePinnedToCore(
+    Core0Code,
+    "PressureControl",
+    10000,
+    NULL,
+    1,
+    NULL,
+    0
+  );
+}
+
+void loop() {
   xSemaphoreTake(mutex, portMAX_DELAY);
   if (isnan(pressure_psi)) {
     ResetSensor();
+  } else {
+    logMessage = "";
   }
-  logMessage = "Pressure reading updated";
+
+  if (Serial.available() > 0) {
+    String input = Serial.readStringUntil('\n');
+    logMessage += input;//.toFloat();
+  }
+
   printJSON();
   xSemaphoreGive(mutex);
 
