@@ -74,7 +74,7 @@ void Core0Code(void * pvParameters) {
       buffer_index = 0;
     }
 
-    delay(100);
+    delay(1);
   }
 }
 
@@ -108,7 +108,15 @@ void loop() {
 
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
-    logMessage += input;//.toFloat();
+    DynamicJsonDocument doc(128);
+    DeserializationError error = deserializeJson(doc, input);
+    if (!error) {
+      if (doc.containsKey("Pressure")) {
+        pressure_setpoint_psi = doc["Pressure"];
+      }
+    } else {
+      logMessage += "JSON parse error";
+    }
   }
 
   printJSON();
