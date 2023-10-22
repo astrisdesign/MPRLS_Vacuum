@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include <ArduinoJson.h>
+#include <FreeRTOS.h>
 #include "Adafruit_MPRLS.h"
 
 #define RELAY_PIN A1
@@ -13,6 +14,7 @@ float pressure_setpoint_psi = 11.7;
 float pressure_psi = 0.0;
 int led = LED_BUILTIN;
 String logMessage = "";
+SemaphoreHandle_t mutex;
 
 void printJSON() {
   DynamicJsonDocument doc(128);
@@ -23,23 +25,23 @@ void printJSON() {
 }
 
 void ResetSensor() {
-  while (true) {  // Keep trying to initialize the sensor
-    digitalWrite(RESET_PIN, LOW);  // Reset the sensor
-    delay(100);  // Wait for 100ms
-    digitalWrite(RESET_PIN, HIGH);  // Release the reset
-    delay(100);  // Wait for 100ms
+  while (true) {
+    digitalWrite(RESET_PIN, LOW);
+    delay(100);
+    digitalWrite(RESET_PIN, HIGH);
+    delay(100);
 
-    if (mpr.begin()) {  // Try to initialize the sensor
-      break;  // Break out of the loop if successful
+    if (mpr.begin()) {
+      break;
     } else {
-      digitalWrite(led, HIGH);  // Turn on the built-in LED
-      delay(500);  // Wait for 500ms
-      digitalWrite(led, LOW);  // Turn off the built-in LED
-      delay(100);  // Wait for 100ms
-      logMessage = "Pressure Sensor Initialization Failure";  // Update log message
-      pressure_psi = 0.0;  // Set pressure to zero
-      printJSON();  // Print JSON using the function for consistent formatting
-      delay(400);  // Wait for .4 seconds to make the total delay 1 second
+      digitalWrite(led, HIGH);
+      delay(500);
+      digitalWrite(led, LOW);
+      delay(100);
+      logMessage = "Pressure Sensor Initialization Failure";
+      pressure_psi = 0.0;
+      printJSON();
+      delay(400);
     }
   }
 }
@@ -50,30 +52,60 @@ void setup() {
   pinMode(led, OUTPUT);
   pinMode(RESET_PIN, OUTPUT);
 
+  mutex = xSemaphoreCreateMutex();
   ResetSensor();
+
+  xTaskCreatePinnedToCore(
+    Core0Code,
+    "PressureControl",
+    10000,
+    NULL,
+    1,
+    NULL,
+    0
+  );
+}
+
+void Core0Code(void * pvParameters) {
+  for (;;) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    float pressure_hPa = mpr.readPressure();
+    MPRLS_reading_buffer[buffer_index] = pressure_hPa / 68.947572932;
+    buffer_index++;
+    xSemaphoreGive(mutex);
+
+    if (buffer_index >= 5) {
+      std::sort(MPRLS_reading_buffer, MPRLS_reading_buffer + 5);
+      xSemaphoreTake(mutex, portMAX_DELAY);
+      pressure_psi = MPRLS_reading_buffer[2];
+      xSemaphoreGive(mutex);
+
+      if (pressure_psi > pressure_setpoint_psi) {
+        digitalWrite(RELAY_PIN, HIGH);
+      } else {
+        digitalWrite(RELAY_PIN, LOW);
+      }
+
+      buffer_index = 0;
+    }
+
+    delay(100);
+  }
 }
 
 void loop() {
-  float pressure_hPa = mpr.readPressure();
-  MPRLS_reading_buffer[buffer_index] = pressure_hPa / 68.947572932;
-  buffer_index++;
-
-  if (buffer_index >= 5) {
-    std::sort(MPRLS_reading_buffer, MPRLS_reading_buffer + 5);
-    pressure_psi = MPRLS_reading_buffer[2];
-    logMessage = "";
-
-    if (isnan(pressure_psi)) {
-      ResetSensor();
-    }
-
-    printJSON();
-    buffer_index = 0;
+  if (Serial.available() > 0) {
+    String input = Serial.readStringUntil('\n');
+    pressure_setpoint_psi = input.toFloat();
   }
 
-  if (pressure_psi > pressure_setpoint_psi) {
-    digitalWrite(RELAY_PIN, HIGH);
-  } else {
-    digitalWrite(RELAY_PIN, LOW);
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  if (isnan(pressure_psi)) {
+    ResetSensor();
   }
+  logMessage = "Pressure reading updated";
+  printJSON();
+  xSemaphoreGive(mutex);
+
+  delay(500);
 }
