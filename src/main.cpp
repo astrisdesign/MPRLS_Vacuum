@@ -10,7 +10,7 @@ Adafruit_MPRLS mpr = Adafruit_MPRLS(-1, -1);
 
 float MPRLS_reading_buffer[6];
 int buffer_index = 0;
-float pressure_setpoint_psi = 11.7;
+float pressure_setpoint_psi = 3;
 float pressure_psi = 0.0;
 int led = LED_BUILTIN;
 String logMessage = "";
@@ -55,7 +55,7 @@ void Core0Code(void * pvParameters) {
   for (;;) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     float pressure_hPa = mpr.readPressure();
-    MPRLS_reading_buffer[buffer_index] = pressure_hPa / 68.947572932;
+    MPRLS_reading_buffer[buffer_index] = 14.7 - pressure_hPa / 68.947572932;
     buffer_index++;
     xSemaphoreGive(mutex);
 
@@ -65,7 +65,7 @@ void Core0Code(void * pvParameters) {
       pressure_psi = MPRLS_reading_buffer[2];
       xSemaphoreGive(mutex);
 
-      if (pressure_psi > pressure_setpoint_psi) {
+      if (pressure_psi < pressure_setpoint_psi) {
         digitalWrite(RELAY_PIN, HIGH);
       } else {
         digitalWrite(RELAY_PIN, LOW);
@@ -74,7 +74,7 @@ void Core0Code(void * pvParameters) {
       buffer_index = 0;
     }
 
-    delay(1);
+    delay(5);
   }
 }
 
