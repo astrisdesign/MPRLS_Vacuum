@@ -10,7 +10,7 @@ Adafruit_MPRLS mpr = Adafruit_MPRLS(-1, -1);
 
 float MPRLS_reading_buffer[6];
 int buffer_index = 0;
-float pressure_setpoint_psi = 11.7;
+float pressure_setpoint_psi = 0;
 float pressure_psi = 0.0;
 int led = LED_BUILTIN;
 String logMessage = "";
@@ -23,7 +23,6 @@ void printJSON() {
   Serial.print("~~~");
   DynamicJsonDocument setpoints(128);
   setpoints["Pressure"] = pressure_setpoint_psi;
-  setpoints["Temperature"] = 25;
   serializeJson(setpoints, Serial);
   Serial.print("~~~");
   Serial.println(logMessage);
@@ -52,10 +51,18 @@ void ResetSensor() {
 }
 
 void Core0Code(void * pvParameters) {
+  unsigned long start_time = 0;
+  unsigned long current_time = 0;
+  bool waiting = false;
+
+  const unsigned long min_high_duration = 25;  // in milliseconds
+  const unsigned long high_wait_time = 50;  // in milliseconds
+  const unsigned long low_wait_time = 50;  // in milliseconds
+
   for (;;) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     float pressure_hPa = mpr.readPressure();
-    MPRLS_reading_buffer[buffer_index] = pressure_hPa / 68.947572932;
+    MPRLS_reading_buffer[buffer_index] = 14.7 - pressure_hPa / 68.947572932;
     buffer_index++;
     xSemaphoreGive(mutex);
 
@@ -65,18 +72,52 @@ void Core0Code(void * pvParameters) {
       pressure_psi = MPRLS_reading_buffer[2];
       xSemaphoreGive(mutex);
 
-      if (pressure_psi > pressure_setpoint_psi) {
+      current_time = millis();
+
+      if (pressure_psi < pressure_setpoint_psi * 0.8) {
         digitalWrite(RELAY_PIN, HIGH);
-      } else {
+        waiting = false;
+      } 
+      else if (pressure_psi < pressure_setpoint_psi*0.985) {
+        if (!waiting) {
+          start_time = current_time;
+          digitalWrite(RELAY_PIN, HIGH);
+          waiting = true;
+        } 
+        else {
+          if (current_time - start_time > min_high_duration) {
+            digitalWrite(RELAY_PIN, LOW);
+            if (current_time - start_time > min_high_duration + low_wait_time) {
+              waiting = false;
+            }
+          }
+        }
+      } 
+      else if (pressure_psi > pressure_setpoint_psi * 1.15) {
         digitalWrite(RELAY_PIN, LOW);
+        waiting = false;
+      } 
+      else {
+        if (!waiting) {
+          start_time = current_time;
+          digitalWrite(RELAY_PIN, LOW);
+          waiting = true;
+        } 
+        else {
+          if (current_time - start_time > high_wait_time) {
+            waiting = false;
+          }
+        }
       }
 
       buffer_index = 0;
     }
 
-    delay(1);
+    delay(5);
   }
 }
+
+
 
 void setup() {
   Serial.begin(115200);
