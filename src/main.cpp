@@ -3,8 +3,10 @@
 #include <FreeRTOS.h>
 #include "Adafruit_MPRLS.h"
 
-#define RELAY_PIN A1
-#define RESET_PIN A5
+#define RELAY_PIN 11
+#define RESET_PIN 10
+#define MPRLS_POWER_PIN 9
+#define MPRLS_GND_PIN 5
 
 Adafruit_MPRLS mpr = Adafruit_MPRLS(-1, -1);
 
@@ -117,13 +119,16 @@ void Core0Code(void * pvParameters) {
   }
 }
 
-
-
 void setup() {
   Serial.begin(115200);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(led, OUTPUT);
   pinMode(RESET_PIN, OUTPUT);
+  pinMode(MPRLS_POWER_PIN, OUTPUT);
+  pinMode(MPRLS_GND_PIN, OUTPUT);
+
+  digitalWrite(MPRLS_POWER_PIN, HIGH);
+  digitalWrite(MPRLS_GND_PIN, LOW);
 
   mutex = xSemaphoreCreateMutex();
   ResetSensor();
