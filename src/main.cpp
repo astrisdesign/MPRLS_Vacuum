@@ -12,7 +12,7 @@ Adafruit_MPRLS mpr = Adafruit_MPRLS(-1, -1);
 
 float MPRLS_reading_buffer[6];
 int buffer_index = 0;
-float pressure_setpoint_psi = 0;
+float pressure_setpoint_psi = -1;
 float pressure_psi = 0.0;
 int led = LED_BUILTIN;
 String logMessage = "";
@@ -129,9 +129,13 @@ void setup() {
 
   digitalWrite(MPRLS_POWER_PIN, HIGH);
   digitalWrite(MPRLS_GND_PIN, LOW);
+  logMessage = "Pins established.";
+  printJSON();
 
   mutex = xSemaphoreCreateMutex();
   ResetSensor();
+  logMessage = "Sensor reset during initial setup.";
+  printJSON();
 
   xTaskCreatePinnedToCore(
     Core0Code,
@@ -142,6 +146,8 @@ void setup() {
     NULL,
     0
   );
+  logMessage = "Core0 task (pressure control) initiated.";
+  printJSON();
 }
 
 void loop() {
